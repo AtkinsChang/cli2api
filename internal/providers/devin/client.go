@@ -47,6 +47,9 @@ type Client struct {
 	mu       sync.Mutex
 	pending  map[string]*loginPending
 	listener net.Listener
+
+	identityMu sync.Mutex
+	identities *chatIdentityCache
 }
 
 const loginPendingTTL = 10 * time.Minute

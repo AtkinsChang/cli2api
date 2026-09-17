@@ -47,7 +47,7 @@ func TestChatRequestWireContract(t *testing.T) {
 			Images:    []Image{{Base64Data: "aGVsbG8=", MimeType: "image/png"}},
 			Thinking:  "reason", Signature: []byte("signature"), SignatureType: "type"}},
 		[]Tool{{Name: "lookup", Description: "description", Parameters: []byte(`{"type":"object"}`)}},
-		&temperature, 1234, t.Name(), "cascade")
+		&temperature, 1234, ChatIdentity{TrajectoryID: t.Name(), CascadeID: "cascade", ExecutionID: "execution", StepIndex: 2})
 	if err != nil {
 		t.Fatal(err)
 	}

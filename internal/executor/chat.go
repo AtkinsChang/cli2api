@@ -886,6 +886,7 @@ func (e ChatExecutor) chatInProcessNonStreamAttempt(ctx context.Context, item ac
 		return ChatResult{}, accounts.Classified{}, fmt.Errorf("provider %s does not implement chat", item.Provider)
 	}
 	started := time.Now()
+	req.SessionKey = resolveSessionKey(ctx, req)
 	outcome, err := adapter.Chat.ChatNonStream(ctx, item.ID, sanitizeForItem(item, req))
 	finished := time.Now().UTC()
 	latency := int(finished.Sub(started).Milliseconds())
@@ -938,6 +939,7 @@ func (e ChatExecutor) chatInProcessStreamAttempt(ctx context.Context, item accou
 		return StreamResult{}, accounts.Classified{}, fmt.Errorf("provider %s does not implement chat", item.Provider)
 	}
 	started := time.Now()
+	req.SessionKey = resolveSessionKey(ctx, req)
 	resp, err := adapter.Chat.ChatStream(ctx, item.ID, sanitizeForItem(item, req))
 	if err != nil {
 		finished := time.Now().UTC()

@@ -25,7 +25,7 @@ func (c *Client) ChatNonStream(ctx context.Context, accountID string, req transl
 	if err != nil {
 		return providers.ChatOutcome{}, err
 	}
-	built, err := c.buildChatHTTPRequest(ctx, credential, req)
+	built, err := c.buildChatHTTPRequest(ctx, accountID, credential, req)
 	if err != nil {
 		return providers.ChatOutcome{}, err
 	}
@@ -55,7 +55,7 @@ func (c *Client) ChatStream(ctx context.Context, accountID string, req translate
 	if err != nil {
 		return nil, err
 	}
-	built, err := c.buildChatHTTPRequest(ctx, credential, req)
+	built, err := c.buildChatHTTPRequest(ctx, accountID, credential, req)
 	if err != nil {
 		return nil, err
 	}
@@ -76,8 +76,16 @@ func (c *Client) ChatStream(ctx context.Context, accountID string, req translate
 	return rewriteConnectStream(resp, firstNonEmpty(req.Model, "devin"), built.originalByAlias, built.toolsDiag)
 }
 
-func (c *Client) buildChatHTTPRequest(ctx context.Context, credential Credential, req translate.ChatRequest) (chatRequestBuild, error) {
+func (c *Client) buildChatHTTPRequest(ctx context.Context, accountID string, credential Credential, req translate.ChatRequest) (chatRequestBuild, error) {
 	payload := BuildChatPayload(req, currentLevels())
+	key := req.SessionKey
+	if key == "" {
+		key = translate.ContentSessionSeed(req)
+	}
+	identity, err := c.chatIdentity(accountID, credential.DeviceSeed, key, payload)
+	if err != nil {
+		return chatRequestBuild{}, err
+	}
 	proto, err := BuildGetChatMessageRequest(
 		credential.SessionToken,
 		credential.DeviceSeed,
@@ -87,8 +95,7 @@ func (c *Client) buildChatHTTPRequest(ctx context.Context, credential Credential
 		payload.Tools,
 		payload.Temperature,
 		payload.MaxTokens,
-		"",
-		"",
+		identity,
 	)
 	if err != nil {
 		return chatRequestBuild{}, fmt.Errorf("encode Devin chat request: %w", err)

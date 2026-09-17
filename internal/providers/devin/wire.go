@@ -13,8 +13,6 @@ import (
 	"net/http"
 	"runtime"
 	"strings"
-	"sync"
-	"sync/atomic"
 
 	apipb "github.com/caigee-cmd/cli2api/internal/providers/devin/devinpb/api_server_pb"
 	chatpb "github.com/caigee-cmd/cli2api/internal/providers/devin/devinpb/chat_pb"
@@ -116,34 +114,6 @@ func GenerateSentryTrace() string {
 	return hex.EncodeToString(b[:16]) + "-" + hex.EncodeToString(b[16:24]) + "-1"
 }
 
-var (
-	sessionTurnMu sync.Mutex
-	sessionTurns  = map[string]*atomic.Uint64{}
-)
-
-// NextSessionTurnIndex returns the next 0-based request ordinal for a session.
-func NextSessionTurnIndex(sessionID string) int {
-	cleanID := strings.TrimSpace(sessionID)
-	if cleanID == "" {
-		return 0
-	}
-	sessionTurnMu.Lock()
-	counter, ok := sessionTurns[cleanID]
-	if !ok {
-		counter = &atomic.Uint64{}
-		sessionTurns[cleanID] = counter
-	}
-	sessionTurnMu.Unlock()
-	return int(counter.Add(1) - 1)
-}
-
-// ResetSessionTurnIndex clears a session counter (tests).
-func ResetSessionTurnIndex(sessionID string) {
-	sessionTurnMu.Lock()
-	delete(sessionTurns, strings.TrimSpace(sessionID))
-	sessionTurnMu.Unlock()
-}
-
 func WrapConnectEnvelope(protoBytes []byte) []byte {
 	return WrapConnectEnvelopeWithFlag(ConnectFlagData, protoBytes)
 }
@@ -237,19 +207,16 @@ func BuildGetChatMessageRequest(
 	tools []Tool,
 	temperature *float64,
 	maxTokens int,
-	sessionID string,
-	cascadeID string,
+	identity ChatIdentity,
 ) ([]byte, error) {
 	if maxTokens <= 0 {
 		maxTokens = DefaultMaxTokens
 	}
-	if sessionID == "" {
-		sessionID = randomHex(16)
-	}
-	if cascadeID == "" {
-		cascadeID = sessionID
+	if strings.TrimSpace(identity.TrajectoryID) == "" || strings.TrimSpace(identity.CascadeID) == "" || strings.TrimSpace(identity.ExecutionID) == "" {
+		return nil, fmt.Errorf("chat identity is incomplete")
 	}
 	osName := runtime.GOOS
+	cacheOptions := &chatpb.PromptCacheOptions{Type: chatpb.CacheControlType_CACHE_CONTROL_TYPE_EPHEMERAL}
 
 	req := &apipb.GetChatMessageRequest{
 		Metadata:    clientMetadata(sessionToken, deviceSeed, osName),
@@ -259,22 +226,28 @@ func BuildGetChatMessageRequest(
 			MaxNewlines: 400, TopK: 40,
 			TopP: float64(float32(0.95)),
 		},
-		CascadeId:    cascadeID,
+		CascadeId:    identity.CascadeID,
 		PlannerMode:  commonpb.ConversationalPlannerMode_CONVERSATIONAL_PLANNER_MODE_DEFAULT,
 		ChatModelUid: chatModelUID,
+		ExecutionId:  identity.ExecutionID,
 	}
 	if strings.TrimSpace(systemPrompt) != "" {
 		req.Prompt = systemPrompt
+		req.SystemPromptCacheOptions = cacheOptions
 	}
 	tempVal := 1.0
 	if temperature != nil {
 		tempVal = *temperature
 	}
 	req.Configuration.Temperature = tempVal
-	for _, p := range prompts {
+	for index, p := range prompts {
 		msgID := p.MessageID
 		if msgID == "" {
-			msgID = randomHex(16)
+			var err error
+			msgID, err = randomUUIDv4()
+			if err != nil {
+				return nil, fmt.Errorf("allocate prompt message ID: %w", err)
+			}
 		}
 		source := p.Source
 		if source <= 0 {
@@ -286,6 +259,9 @@ func BuildGetChatMessageRequest(
 		}
 		if p.ToolCallID != "" {
 			prompt.ToolCallId = p.ToolCallID
+		}
+		if index == len(prompts)-1 {
+			prompt.PromptCacheOptions = cacheOptions
 		}
 		for _, img := range p.Images {
 			data := strings.TrimSpace(img.Base64Data)
@@ -320,17 +296,12 @@ func BuildGetChatMessageRequest(
 		}
 		req.Tools = append(req.Tools, definition)
 	}
-	turnIndex := NextSessionTurnIndex(sessionID)
-	trajectory := &cortexpb.CortexTrajectoryReference{TrajectoryId: sessionID, TrajectoryType: cortexpb.CortexTrajectoryType_CORTEX_TRAJECTORY_TYPE_CASCADE}
-	if turnIndex > 0 {
-		trajectory.StepIndex = int32(turnIndex)
+	req.TrajectoryReference = &cortexpb.CortexTrajectoryReference{
+		TrajectoryId:   identity.TrajectoryID,
+		TrajectoryType: cortexpb.CortexTrajectoryType_CORTEX_TRAJECTORY_TYPE_CASCADE,
+		StepIndex:      identity.StepIndex,
+		StepType:       identity.StepType,
 	}
-	if len(prompts) > 0 && prompts[len(prompts)-1].Source == 1 {
-		if turnIndex == 0 || len(prompts) < 2 || prompts[len(prompts)-2].Source != 1 {
-			trajectory.StepType = cortexpb.CortexStepType_CORTEX_STEP_TYPE_USER_INPUT
-		}
-	}
-	req.TrajectoryReference = trajectory
 	return proto.Marshal(req)
 }
 

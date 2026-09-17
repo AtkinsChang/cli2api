@@ -13,12 +13,18 @@ Write each change in both `### English` and `### 中文` under `## Unreleased`.
 - Generate Devin chat and account-status protobuf types from extracted descriptors
   with a manual update command; builds and CI use committed Go bindings without
   downloading releases or regenerating schemas
+- Add upstream EPHEMERAL cache-control markers and reuse independent UUIDs for
+  Devin cascade and trajectory IDs within each account and API-key-scoped session.
+  Retries and tool continuations reuse the user turn's execution ID; trajectory
+  positions follow replayed message history rather than request counts. Identity
+  state is bounded and process-local, and cache continuity remains best-effort
 
 ### 中文
 
 - OpenAI、Anthropic 与 Responses 流式转发会保留上游的类型化错误，避免无效的 Devin 请求被错误地冷却账号，同时传输中断仍可重试
 - Devin 的缓存读取与写入会显示在 OpenAI 兼容 usage 中，prompt 总数包含全部上游输入 token
 - 新增手动更新命令，提取 descriptor 并生成 Devin 聊天与账号状态 protobuf 类型；构建与 CI 直接使用已提交的 Go 文件，不下载发行包或重新生成 schema
+- Devin 聊天新增上游 EPHEMERAL 缓存控制标记，在账号与 API Key 隔离的会话内复用独立的 cascade 与 trajectory UUID。重试和工具续接复用同一用户轮次的 execution ID，trajectory 位置按重放消息历史推导，不再按请求次数递增。身份状态有容量限制且仅保存在进程内，缓存连续性仍为尽力而为
 
 ## 0.5.6 - 2026-09-17
 

@@ -6,6 +6,7 @@ import (
 )
 
 type ChatRequest struct {
+	SessionKey            string          `json:"-"`
 	Model                 string          `json:"model"`
 	Messages              []ChatMessage   `json:"messages"`
 	Stream                bool            `json:"stream"`
